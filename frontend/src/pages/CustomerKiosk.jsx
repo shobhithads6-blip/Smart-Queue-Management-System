@@ -35,6 +35,7 @@ export default function CustomerKiosk() {
 
   // Show the issued ticket
   if (ticket) {
+    const estimatedWaitMinutes = Math.ceil(Number(ticket.estimatedWaitMinutes) || 0)
     return (
       <div className="max-w-sm mx-auto mt-16 text-center">
         <p className="text-sm text-gray-500 mb-2">Your token number</p>
@@ -46,7 +47,7 @@ export default function CustomerKiosk() {
             : `${ticket.positionInQueue} person(s) ahead of you`}
         </p>
         <p className="text-sm text-gray-500 mb-8">
-          Estimated wait: <span className="font-medium">{ticket.estimatedWaitMinutes} min</span>
+          Estimated wait: <span className="font-medium">about {estimatedWaitMinutes} {estimatedWaitMinutes === 1 ? 'minute' : 'minutes'}</span>
         </p>
         {ticket.customerName && (
           <p className="text-sm text-gray-400 mb-4">Checked in as: {ticket.customerName}</p>
@@ -81,7 +82,7 @@ export default function CustomerKiosk() {
           >
             <p className="text-sm font-medium text-gray-800">{service.name}</p>
             <p className="text-xs text-gray-400 mt-1">
-              ~{service.avgServiceMinutes} min avg
+              ~{Math.round(Number(service.avgServiceMinutes) || 0)} min avg
               {service.priorityWeight >= 8 && (
                 <span className="ml-2 text-amber-500 font-medium">Priority</span>
               )}

@@ -4,7 +4,13 @@ import { useAuth } from '../context/AuthContext'
 export default function PrivateRoute({ children, role }) {
   const { user, loading } = useAuth()
 
-  if (loading) return null
+  if (loading) {
+    return (
+      <p role="status" className="text-sm text-gray-500">
+        Checking your session…
+      </p>
+    )
+  }
 
   if (!user) return <Navigate to="/login" replace />
 

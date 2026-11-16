@@ -1,6 +1,7 @@
 package com.qms.model.entity;
 
 import com.qms.model.enums.CounterStatus;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -24,6 +25,7 @@ public class Counter {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "current_ticket_id")
+    @JsonIgnore
     private Ticket currentTicket;          // The ticket currently being served (null if idle)
 
     @Column(name = "staff_name")

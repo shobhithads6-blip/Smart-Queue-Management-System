@@ -23,6 +23,10 @@ export const getTicket = (id) => api.get(`/tickets/${id}`)
 // --- Counter (staff) ---
 export const getCounters = () => api.get('/counters')
 
+export const getCurrentTicket = (counterId) => api.get(`/counters/${counterId}/current`)
+
+export const getBoardCounters = () => api.get('/counters/board')
+
 export const callNext = (counterId) =>
   api.post(`/counters/${counterId}/next`)
 

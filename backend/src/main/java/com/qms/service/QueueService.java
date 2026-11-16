@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.PriorityBlockingQueue;
 
 @Service
@@ -34,7 +35,9 @@ public class QueueService {
     }
 
     public void removeFromQueue(Ticket ticket) {
-        waitingQueue.remove(ticket);
+        // Ticket fields such as status and counter change before this is called,
+        // so entity equality may no longer match the detached queue entry.
+        waitingQueue.removeIf(queuedTicket -> Objects.equals(queuedTicket.getId(), ticket.getId()));
     }
 
     public int getQueueSize() {
@@ -51,7 +54,8 @@ public class QueueService {
     public double calculateEta(Ticket ticket) {
         int position = getPositionInQueue(ticket);
         double avgMinutes = ticket.getServiceType().getAvgServiceMinutes();
-        return position * avgMinutes;
+        // Present a whole-minute estimate, rounding up so we do not understate the wait.
+        return Math.ceil(position * avgMinutes);
     }
 
     private boolean isAheadOf(Ticket candidate, Ticket reference) {

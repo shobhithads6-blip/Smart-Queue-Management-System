@@ -1,5 +1,6 @@
 package com.qms.controller;
 
+import com.qms.model.dto.response.CounterBoardState;
 import com.qms.model.dto.response.TicketResponse;
 import com.qms.model.entity.Counter;
 import com.qms.service.CounterService;
@@ -23,6 +24,19 @@ public class CounterController {
     @Operation(summary = "List all counters with their current status")
     public ResponseEntity<List<Counter>> getCounters() {
         return ResponseEntity.ok(counterService.getAllCounters());
+    }
+
+    @GetMapping("/{id}/current")
+    @Operation(summary = "Get the currently called ticket for a counter")
+    public ResponseEntity<TicketResponse> getCurrentTicket(@PathVariable Long id) {
+        TicketResponse ticket = counterService.getCurrentTicket(id);
+        return ticket == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(ticket);
+    }
+
+    @GetMapping("/board")
+    @Operation(summary = "Get counters and any currently called tickets for the public display board")
+    public ResponseEntity<List<CounterBoardState>> getBoardState() {
+        return ResponseEntity.ok(counterService.getBoardState());
     }
 
     @PostMapping("/{id}/next")

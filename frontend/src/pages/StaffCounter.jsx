@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { getCounters, getServices, callNext, markComplete, markNoShow, transferTicket } from '../api'
+import { getCounters, getCurrentTicket, getServices, callNext, markComplete, markNoShow, transferTicket } from '../api'
 
 const STATUS_BADGE = {
   WAITING:   'bg-yellow-100 text-yellow-700',
@@ -11,21 +11,18 @@ const STATUS_BADGE = {
 
 export default function StaffCounter() {
   const { user } = useAuth()
+  const counterStorageKey = `qms-counter-${user?.username || user?.displayName || 'staff'}`
   const [counters, setCounters]     = useState([])
   const [services, setServices]     = useState([])
-  const [counterId, setCounterId]   = useState('')
+  const [counterId, setCounterId]   = useState(() => sessionStorage.getItem(counterStorageKey) || '')
   const [current, setCurrent]       = useState(null)
   const [loading, setLoading]       = useState(false)
   const [message, setMessage]       = useState('')
+  const [counterError, setCounterError] = useState('')
   const [transferTo, setTransferTo] = useState('')
 
   useEffect(() => {
-    getCounters()
-      .then(r => setCounters(Array.isArray(r.data) ? r.data : []))
-      .catch(err => {
-        console.error('Failed to load counters', err);
-        setCounters([]);
-      })
+    loadCounters()
 
     getServices()
       .then(r => setServices(Array.isArray(r.data) ? r.data : []))
@@ -34,6 +31,46 @@ export default function StaffCounter() {
         setServices([]);
       })
   }, [])
+
+  useEffect(() => {
+    if (counterId) sessionStorage.setItem(counterStorageKey, counterId)
+    else sessionStorage.removeItem(counterStorageKey)
+  }, [counterId, counterStorageKey])
+
+  useEffect(() => {
+    let active = true
+    setCurrent(null)
+
+    if (!counterId) return () => { active = false }
+
+    getCurrentTicket(counterId)
+      .then(response => {
+        if (active) setCurrent(response.data || null)
+      })
+      .catch(error => {
+        if (active) {
+          setCurrent(null)
+          console.error('Failed to restore current ticket', error)
+        }
+      })
+
+    return () => { active = false }
+  }, [counterId])
+
+  async function loadCounters() {
+    setCounterError('')
+    try {
+      const response = await getCounters()
+      if (!Array.isArray(response.data)) {
+        throw new Error('The counters response was not a list.')
+      }
+      setCounters(response.data)
+    } catch (err) {
+      console.error('Failed to load counters', err)
+      setCounters([])
+      setCounterError('Unable to load counters. Check your connection and try again.')
+    }
+  }
 
   function flash(msg) {
     setMessage(msg)
@@ -94,6 +131,15 @@ export default function StaffCounter() {
             ))}
         </select>
       </div>
+
+      {counterError && (
+        <div role="alert" className="mb-4 flex items-center justify-between gap-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+          <span>{counterError}</span>
+          <button onClick={loadCounters} className="font-medium hover:underline">
+            Retry
+          </button>
+        </div>
+      )}
 
       {message && (
         <div className="mb-4 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">

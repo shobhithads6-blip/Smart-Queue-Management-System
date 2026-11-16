@@ -12,13 +12,35 @@ export default function AdminDashboard() {
   const [newName, setNewName]     = useState('')
   const [newStaff, setNewStaff]   = useState('')
   const [message, setMessage]     = useState('')
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState('')
 
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    const [aRes, cRes] = await Promise.all([getAnalytics(), getCounters()])
-    setAnalytics(aRes.data)
-    setCounters(cRes.data)
+    setLoading(true)
+    setError('')
+    try {
+      const [aRes, cRes] = await Promise.all([getAnalytics(), getCounters()])
+      if (!Array.isArray(cRes.data)) {
+        throw new Error('The counters response was not a list.')
+      }
+      if (
+        !aRes.data ||
+        typeof aRes.data !== 'object' ||
+        !aRes.data.ticketsByHour ||
+        !aRes.data.ticketsByServiceType
+      ) {
+        throw new Error('The analytics response was incomplete.')
+      }
+      setAnalytics(aRes.data)
+      setCounters(cRes.data)
+    } catch (err) {
+      console.error('Failed to load admin dashboard', err)
+      setError('Unable to load dashboard data. Check your connection and try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   function flash(msg) {
@@ -36,14 +58,24 @@ export default function AdminDashboard() {
   }
 
   async function handleStatusChange(id, status) {
-    await setCounterStatus(id, status)
-    loadData()
+    try {
+      await setCounterStatus(id, status)
+      flash(status === 'OFFLINE' ? 'Counter closed; it remains visible on the Display Board.' : 'Counter status updated.')
+      loadData()
+    } catch (err) {
+      flash(err.response?.data?.error || 'Could not update the counter status.')
+    }
   }
 
   async function handleDelete(id) {
-    if (!confirm('Remove this counter?')) return
-    await deleteCounter(id)
-    loadData()
+    if (!confirm('Close this counter? It will remain visible on the Display Board as Closed.')) return
+    try {
+      await deleteCounter(id)
+      flash('Counter closed; it remains visible on the Display Board.')
+      loadData()
+    } catch (err) {
+      flash(err.response?.data?.error || 'Could not close this counter.')
+    }
   }
 
   // Build sorted arrays for recharts from the analytics maps
@@ -67,13 +99,28 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {loading && (
+        <p role="status" className="mb-4 text-sm text-gray-500">
+          Loading dashboard data…
+        </p>
+      )}
+
+      {error && (
+        <div role="alert" className="mb-4 flex items-center justify-between gap-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+          <span>{error}</span>
+          <button onClick={loadData} className="font-medium hover:underline">
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Summary stat cards */}
       {analytics && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
           <StatCard label="Total today"     value={analytics.totalTicketsToday} />
           <StatCard label="Completed"       value={analytics.totalCompleted} />
           <StatCard label="No-show"         value={analytics.totalNoShow} />
-          <StatCard label="Avg wait"        value={`${analytics.avgWaitMinutes} min`} />
+          <StatCard label="Avg wait"        value={`${Math.round(analytics.avgWaitMinutes)} min`} />
         </div>
       )}
 
@@ -130,13 +177,14 @@ export default function AdminDashboard() {
                 >
                   <option>ACTIVE</option>
                   <option>PAUSED</option>
-                  <option>OFFLINE</option>
+                  <option value="OFFLINE">CLOSED</option>
                 </select>
                 <button
                   onClick={() => handleDelete(c.id)}
-                  className="text-xs text-red-400 hover:text-red-600"
+                  disabled={c.status === 'OFFLINE'}
+                  className="text-xs text-red-400 hover:text-red-600 disabled:text-gray-400 disabled:cursor-not-allowed"
                 >
-                  Remove
+                  {c.status === 'OFFLINE' ? 'Closed' : 'Close'}
                 </button>
               </div>
             </div>

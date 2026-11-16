@@ -3,13 +3,16 @@ package com.qms.service;
 import com.qms.exception.QueueEmptyException;
 import com.qms.exception.ResourceNotFoundException;
 import com.qms.model.dto.response.BoardEvent;
+import com.qms.model.dto.response.CounterBoardState;
 import com.qms.model.dto.response.TicketResponse;
 import com.qms.model.entity.Counter;
+import com.qms.model.entity.ServiceType;
 import com.qms.model.entity.Ticket;
 import com.qms.model.enums.CounterStatus;
 import com.qms.model.enums.TicketStatus;
 import com.qms.repository.CounterRepository;
 import com.qms.repository.TicketRepository;
+import com.qms.repository.ServiceTypeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -24,6 +27,7 @@ public class CounterService {
 
     private final CounterRepository counterRepository;
     private final TicketRepository ticketRepository;
+    private final ServiceTypeRepository serviceTypeRepository;
     private final QueueService queueService;
     private final TicketService ticketService;
     private final SimpMessagingTemplate messagingTemplate;
@@ -95,12 +99,8 @@ public class CounterService {
         ticket.setCalledAt(null);
         ticket.setCounter(null);
 
-        var targetServiceType = ticket.getServiceType();
-        if (targetServiceTypeId != null) {
-            targetServiceType = ticketRepository.findById(targetServiceTypeId)
-                    .map(Ticket::getServiceType)
-                    .orElse(ticket.getServiceType());
-        }
+        ServiceType targetServiceType = serviceTypeRepository.findById(targetServiceTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Service type not found: " + targetServiceTypeId));
         ticket.setServiceType(targetServiceType);
         ticketRepository.save(ticket);
 
@@ -114,6 +114,34 @@ public class CounterService {
 
     public List<Counter> getAllCounters() {
         return counterRepository.findAll();
+    }
+
+    @Transactional(readOnly = true)
+    public TicketResponse getCurrentTicket(Long counterId) {
+        Counter counter = counterRepository.findById(counterId)
+                .orElseThrow(() -> new ResourceNotFoundException("Counter not found: " + counterId));
+        Ticket ticket = counter.getCurrentTicket();
+        if (ticket == null || ticket.getStatus() != TicketStatus.CALLED) {
+            return null;
+        }
+        return ticketService.mapToResponse(ticket);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CounterBoardState> getBoardState() {
+        return counterRepository.findAll().stream().map(counter -> {
+            Ticket ticket = counter.getCurrentTicket();
+            boolean isCalled = ticket != null && ticket.getStatus() == TicketStatus.CALLED;
+
+            return new CounterBoardState(
+                    counter.getId(),
+                    counter.getName(),
+                    counter.getStatus(),
+                    isCalled ? ticket.getTokenNumber() : null,
+                    isCalled ? ticket.getServiceType().getName() : null,
+                    isCalled ? ticket.getCalledAt() : null
+            );
+        }).toList();
     }
 
     private void updateRollingAvgServiceTime(Ticket ticket) {

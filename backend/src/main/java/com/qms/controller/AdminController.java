@@ -45,14 +45,28 @@ public class AdminController {
                                                      @RequestParam CounterStatus status) {
         Counter counter = counterRepository.findById(id)
                 .orElseThrow(() -> new com.qms.exception.ResourceNotFoundException("Counter not found"));
+        if (status == CounterStatus.OFFLINE) {
+            ensureCounterHasNoActiveTicket(counter);
+        }
         counter.setStatus(status);
         return ResponseEntity.ok(counterRepository.save(counter));
     }
 
     @DeleteMapping("/counters/{id}")
-    @Operation(summary = "Remove a counter")
+    @Operation(summary = "Close a counter while keeping it visible on the display board")
     public ResponseEntity<Void> deleteCounter(@PathVariable Long id) {
-        counterRepository.deleteById(id);
+        Counter counter = counterRepository.findById(id)
+                .orElseThrow(() -> new com.qms.exception.ResourceNotFoundException("Counter not found"));
+        ensureCounterHasNoActiveTicket(counter);
+        counter.setStatus(CounterStatus.OFFLINE);
+        counterRepository.save(counter);
         return ResponseEntity.noContent().build();
+    }
+
+    private void ensureCounterHasNoActiveTicket(Counter counter) {
+        if (counter.getCurrentTicket() != null
+                && counter.getCurrentTicket().getStatus() == com.qms.model.enums.TicketStatus.CALLED) {
+            throw new IllegalStateException("Complete or transfer the active ticket before closing this counter.");
+        }
     }
 }

@@ -1,22 +1,52 @@
 import { useState, useEffect, useRef } from 'react'
 import { Client } from '@stomp/stompjs'
-import { getCounters } from '../api'
+import { getBoardCounters } from '../api'
+
+function applyBoardEvent(counter, event) {
+  if (counter.name !== event.counterName) return counter
+
+  const eventTime = Date.parse(event.calledAt || '') || 0
+  const counterTime = Date.parse(counter.calledAt || '') || 0
+  if (eventTime < counterTime) return counter
+
+  return {
+    ...counter,
+    currentToken: event.tokenNumber,
+    currentService: event.serviceTypeName,
+    calledAt: event.calledAt,
+  }
+}
 
 export default function DisplayBoard() {
-  const [counters, setCounters]   = useState([])
-  const [events, setEvents]       = useState([])
+  const [counters, setCounters] = useState([])
+  const [events, setEvents] = useState([])
   const [connected, setConnected] = useState(false)
   const clientRef = useRef(null)
+  const liveEventsRef = useRef(new Map())
 
   useEffect(() => {
-    getCounters()
-      .then(r => {
-         setCounters(Array.isArray(r.data) ? r.data : [])
-      })
-      .catch(() => setCounters([]))
-  }, [])
+    let mounted = true
 
-  useEffect(() => {
+    async function loadBoardState() {
+      try {
+        const response = await getBoardCounters()
+        if (!Array.isArray(response.data)) {
+          throw new Error('The display-board response was not a list.')
+        }
+
+        if (mounted) {
+          const snapshot = response.data.map(counter => {
+            const liveEvent = liveEventsRef.current.get(counter.name)
+            return liveEvent ? applyBoardEvent(counter, liveEvent) : counter
+          })
+          setCounters(snapshot)
+        }
+      } catch (error) {
+        console.error('Failed to load display-board state', error)
+        if (mounted) setCounters([])
+      }
+    }
+
     const client = new Client({
       brokerURL: `ws://${location.host}/ws`,
 
@@ -31,16 +61,20 @@ export default function DisplayBoard() {
             return
           }
 
-          setCounters(prev =>
-            prev.map(c =>
-              c.name === event.counterName
-                ? { ...c, currentToken: event.tokenNumber, currentService: event.serviceTypeName }
-                : c
-            )
-          )
+          const previousEvent = liveEventsRef.current.get(event.counterName)
+          const previousTime = Date.parse(previousEvent?.calledAt || '') || 0
+          const eventTime = Date.parse(event.calledAt || '') || 0
+          if (eventTime >= previousTime) {
+            liveEventsRef.current.set(event.counterName, event)
+          }
 
-          setEvents(prev => [event, ...prev].slice(0, 10))
+          setCounters(previous => previous.map(counter => applyBoardEvent(counter, event)))
+          setEvents(previous => [event, ...previous].slice(0, 10))
         })
+
+        // Subscribe first, then fetch the current snapshot so calls made before
+        // this page opened are shown too. Any newer live event is merged in.
+        loadBoardState()
       },
 
       onDisconnect: () => setConnected(false),
@@ -52,10 +86,18 @@ export default function DisplayBoard() {
       reconnectDelay: 5000,
     })
 
+    // Load the active-call snapshot even if the WebSocket is still connecting.
+    loadBoardState()
+
     client.activate()
     clientRef.current = client
-    return () => client.deactivate()
+    return () => {
+      mounted = false
+      client.deactivate()
+    }
   }, [])
+
+  const hasActiveCalls = counters.some(counter => counter.currentToken)
 
   return (
     <div>
@@ -66,9 +108,8 @@ export default function DisplayBoard() {
         </span>
       </div>
 
-      {/* One card per active counter */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        {counters.filter(c => c.status !== 'OFFLINE').map(counter => (
+        {counters.map(counter => (
           <div
             key={counter.id}
             className="border border-gray-200 bg-white rounded-lg px-5 py-4 text-center"
@@ -80,7 +121,12 @@ export default function DisplayBoard() {
                 <p className="text-xs text-gray-500 mt-1">{counter.currentService || ''}</p>
               </>
             ) : (
-              <p className="text-2xl text-gray-300 font-light">—</p>
+              <p className={`text-2xl font-light ${counter.status === 'OFFLINE' ? 'text-gray-500' : 'text-gray-300'}`}>
+                {counter.status === 'OFFLINE' ? 'Closed' : '—'}
+              </p>
+            )}
+            {counter.status === 'OFFLINE' && counter.currentToken && (
+              <p className="text-xs mt-2 text-gray-500">Counter closed</p>
             )}
             {counter.status === 'PAUSED' && (
               <p className="text-xs mt-2 text-amber-500">Paused</p>
@@ -93,23 +139,23 @@ export default function DisplayBoard() {
         <div>
           <h2 className="text-sm font-medium text-gray-600 mb-3">Recent calls</h2>
           <div className="flex flex-col gap-2">
-            {events.map((e, i) => (
+            {events.map((event, index) => (
               <div
-                key={i}
+                key={`${event.counterName}-${event.calledAt}-${index}`}
                 className={`flex items-center justify-between border rounded px-4 py-2 text-sm ${
-                  i === 0 ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-100'
+                  index === 0 ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-100'
                 }`}
               >
-                <span className="font-semibold text-gray-800">{e.tokenNumber}</span>
-                <span className="text-gray-500">{e.serviceTypeName}</span>
-                <span className="text-gray-400">{e.counterName}</span>
+                <span className="font-semibold text-gray-800">{event.tokenNumber}</span>
+                <span className="text-gray-500">{event.serviceTypeName}</span>
+                <span className="text-gray-400">{event.counterName}</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {events.length === 0 && (
+      {events.length === 0 && !hasActiveCalls && (
         <p className="text-sm text-gray-400 text-center mt-16">
           Waiting for tokens to be called…
         </p>
